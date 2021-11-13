@@ -3,18 +3,9 @@
 
 from datetime import datetime
 import os, sys, time
-#import win32clipboard, win32con
 import zipfile, base64
 from filetool import FileTool
-import pyperclip
 from decorator import thread_func
-from img_utils import ImgUtils
-import subprocess
-
-try:
-    import win32api, win32con, win32gui
-except:
-    pass
 
 class MyException(Exception): pass
 
@@ -71,18 +62,9 @@ class ZipUtil:
                 base64.decode(src, dest)
 
 class RComm:
-    def __init__(self, is_server = 'server', max_tx_bytes = 2900):
-        server_prefix, server_postfix = '<s>', '</s>'
-        client_prefix, client_postfix = '<c>', '</c>'
-        if is_server == 'server':
-            self.tx_prefix, self.tx_postfix = server_prefix, server_postfix
-            self.rx_prefix, self.rx_postfix = client_prefix, client_postfix
-        else:
-            self.tx_prefix, self.tx_postfix = client_prefix, client_postfix
-            self.rx_prefix, self.rx_postfix = server_prefix, server_postfix
-        self.is_server = is_server
-        self.max_tx_bytes = max_tx_bytes
-        self.reset_text_count = 0
+    def __init__(self):
+        self.server_prefix, self.server_postfix = '<s>', '</s>'
+        self.client_prefix, self.client_postfix = '<c>', '</c>'
         self.delimiter = '<p>\r\n'
         self.file_path = os.path.dirname(os.path.abspath(__file__))
         self.trans_path = os.path.join(self.file_path, 'trans')
@@ -93,92 +75,25 @@ class RComm:
         self.rx_zip_file = os.path.join(self.trans_path, 'rx_temp.zip')
         self.tx_b64_file, self.rx_b64_file = '_tx_temp.txt', '_rx_temp.txt'
         if not os.path.isdir(self.trans_path): os.makedirs(self.trans_path)
-
         self.filetool = FileTool()
-        self.img_utils = ImgUtils()
-        self.max_tx_bytes = self.img_utils.get_max_text_size()
-        print('max tx bytes: %d' % self.max_tx_bytes)
-        self.img_viewer = None
-        pyperclip.set_print_debug_func(self.print_debug)
 
-    def get_clip_text(self):
-        if self.is_server == 'client':
-            return self._get_text_by_clip()
-        else:
-            return self._get_text_by_img()
+    def init_tx_rx(self):
+        self.tx_text = self.tx_comm_tool.set_text
+        self.tx_reset_text = self.tx_comm_tool.reset_text
+        self.tx_empty_text = self.tx_comm_tool.empty_text
+        self.rx_text = self.rx_comm_tool.get_text
+        self.clear_rx_text = self.rx_comm_tool.clear_get_text
+        self.max_tx_bytes = self.tx_comm_tool.get_max_tx_text_size()
 
-    def set_clip_text(self, string, is_server = None):
-        is_server = is_server or self.is_server
-        if is_server == 'client':
-            self.reset_clip_text('server')   # reset clipboard before send img
-            self._set_text_by_img(string)
-        else:
-            self._set_text_by_clip(string)
-
-    def _get_text_by_img(self):
-        for times in range(10):
-            #print('start to rx img')
-            text = self.img_utils.get_data_from_screen()
-            #print('img %d get %s' % (times, text))
-            if text: break
-            time.sleep(0.2)
-        #print('img get %s' % text)
-        return text
-
-    def _set_text_by_img(self, string):
-        if self.img_viewer:
-            self.img_viewer.terminate()
-            self.img_viewer = None
-        if string:
-            img_file = 'data/test.png'
-            self.img_utils.set_data_to_img(string, img_file)
-            self.img_viewer = subprocess.Popen(['mspaint', img_file])
-            time.sleep(0.1)
-            #print('after img show')
-
-    def _get_text_by_clip(self):
-        try:
-            if False:
-                win32clipboard.OpenClipboard()
-                result = win32clipboard.GetClipboardData(win32con.CF_TEXT)
-                win32clipboard.CloseClipboard()
-            else:
-                result = pyperclip.paste()
-            return result
-        except:
-            self.print_debug('get clipboard failed, try again.')
-            return ''
-
-    def _set_text_by_clip(self, string):
-        if False:
-            while True:
-                try:
-                    win32clipboard.OpenClipboard()
-                    win32clipboard.EmptyClipboard()
-                    break
-                except:
-                    self.print_debug('set clipboard failed, try again.')
-                    time.sleep(0.5)
-            win32clipboard.SetClipboardData(win32con.CF_TEXT, string)
-            win32clipboard.CloseClipboard()
-        else:
-            pyperclip.copy(string)
-
-    def reset_clip_text(self, is_server = None):
-        self.set_clip_text('[%s-%d]reset text...' % (self.is_server, self.reset_text_count), is_server)
-        self.reset_text_count += 1
-        time.sleep(0.2)
-
-    def emtpy_clip_text(self, is_server = None):
-        self.set_clip_text('', is_server)
-        time.sleep(0.2)
+    def close_comm(self):
+        self.tx_comm_tool.close()
+        self.rx_comm_tool.close()
 
     def _receive_wait(self, timeout = 0):
         total_times = timeout*2 if timeout else 1000000
         for times in range(total_times):
             time.sleep(0.5)
-            if hasattr(self, 'click_heart_beat'): self.click_heart_beat = self.click_heart_beat + 1     # click deamon heart beat
-            text = self.get_clip_text()
+            text = self.rx_text()
             #print('receive text: %s' % text)
             cmd, payload = self._unpack(text)
             if cmd:
@@ -186,19 +101,19 @@ class RComm:
                 return (cmd, payload)
         raise MyException('%ss timeout, no valid cmd received!' % timeout)
 
-    def print_debug(self, str):
+    def print_debug(self, text):
         if False:
-            self.print_(str)
+            self.print_(text)
         else:
             if not hasattr(self, 'init_log_file'):
                 self.init_log_file = True
                 open(self.log_file, 'w').close()
             with open(self.log_file, 'a') as f:
-                f.write('[%s]%s\n' % (datetime.now().strftime('%I:%M:%S'), str))
+                f.write('[%s]%s\n' % (datetime.now().strftime('%I:%M:%S'), text))
 
-    def print_(self, str):
-        #print(str)
-        print('[%s]%s' % (datetime.now().strftime('%I:%M:%S'), str))
+    def print_(self, text):
+        #print(text)
+        print('[%s]%s' % (datetime.now().strftime('%I:%M:%S'), text))
 
     def print_transfer(self, total_bytes, transfer_bytes):
         def _print_transfer(total_bytes, transfer_bytes):
@@ -237,18 +152,15 @@ class RComm:
             #print('tx payload len: %d' % len(payload))
             #print(payload)
         text += self.tx_postfix
-        #if self.is_server == 'server':
-            #self.reset_clip_text(is_server = 'client')
-        self.set_clip_text(text)
+        self.clear_rx_text()
+        self.tx_text(text)
         self.cmd_text_for_resend = (cmd, text)
         self.print_debug('send cmd: %s' % cmd)
-        if self.is_server == 'server':
-            time.sleep(1)
 
     def _resend_cmd(self):
-        self.reset_clip_text()
+        self.tx_reset_text()
         time.sleep(0.3)
-        self.set_clip_text(self.cmd_text_for_resend[1])
+        self.tx_text(self.cmd_text_for_resend[1])
         self.print_debug('resend cmd: %s' % self.cmd_text_for_resend[0])
 
     def _wait_for_cmd(self, state, wait_cmd, timeout = 0):
@@ -350,25 +262,22 @@ class RComm:
                     break
         if os.path.exists(filename): os.remove(filename)
         self.print_('send file %s finished.' % filename)
+        self.close_comm()
 
     def receive_file_info(self, ref_folder, dest_folder):
         RX_FILE_INFO_STATE = 3
-        self.reset_clip_text()
+        self.tx_reset_text()
         folder_info = self._wait_for_cmd(RX_FILE_INFO_STATE, 'INFO')
         self.send_cmd('WAIT %d' % len(folder_info))
         self.print_('start to process folder info...')
         remain_files = self.filetool.copy_folder_with_info(folder_info, ref_folder, dest_folder)
         self.print_('process folder info finished.')
-        self.reset_clip_text()
+        self.tx_reset_text()
         self._wait_for_cmd(RX_FILE_INFO_STATE, 'QUERY')
         self.send_cmd('NEED %d' % len(remain_files), self.filetool.object_to_string(remain_files) if remain_files else None)
         return remain_files
 
-    def receive_file(self, click_deamon = False, cont_mode = False):
-        if click_deamon:
-            self.click_heart_beat = 1
-            self.click_daemon()
-
+    def receive_file(self, cont_mode = False):
         RX_FILE_HEAD_STATE = 0
         RX_STATE = 1
         RX_END_STATE = 2
@@ -376,7 +285,7 @@ class RComm:
         state = RX_FILE_HEAD_STATE
         while True:
             if state == RX_FILE_HEAD_STATE:
-                self.reset_clip_text()
+                self.tx_reset_text()
                 magic, file_len = self._wait_for_cmd(state, 'FILE')
                 rx_b64_file = os.path.join(self.trans_path, magic + self.rx_b64_file)
                 if os.path.isfile(rx_b64_file) and not cont_mode: os.remove(rx_b64_file)
@@ -405,7 +314,8 @@ class RComm:
                 self.send_cmd('FINISH %d' % (rx_bytes))
                 break
         if f: f.close()
-        #self.emtpy_clip_text()
+        #self.tx_empty_text()
+        self.close_comm()
         return rx_b64_file
 
     def dec_file(self, filename, dest_dir = ''):
@@ -416,32 +326,6 @@ class RComm:
         if os.path.exists(filename): os.remove(filename)
         #if os.path.exists(self.rx_zip_file): os.remove(self.rx_zip_file)
         self.print_('received to %s finished.' % dest_dir)
-
-    # click daemon start after 3 seconds
-    @thread_func(3)
-    def click_daemon(self):
-        global heart_beat, heart_lost
-        heart_beat = 0
-        heart_lost = 0
-        def heart_beat_alive(times):
-            global heart_beat, heart_lost
-            if self.click_heart_beat == heart_beat:
-                heart_lost = heart_lost + 1
-            else:
-                heart_lost = 0
-                heart_beat = self.click_heart_beat
-            if heart_lost > times:
-                return False
-            return True
-        print('click deamon start...')
-        while heart_beat_alive(6):
-            #pos = win32gui.GetCursorPos()
-            #win32api.SetCursorPos(pos[0], pos[1])
-            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0)
-            time.sleep(0.1)
-            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0)
-            time.sleep(0.4)
-        print('click daamon end.')
 
 if __name__ == '__main__':
     test = 0  # 0
@@ -456,16 +340,4 @@ if __name__ == '__main__':
         f = bz2.BZ2File("temp.bz2", "wb", compresslevel=5)
         f.write(open('temp.zip','rb').read())
         f.close()
-    else:
-        if len(sys.argv) < 2:
-            comm = RComm()
-            print('start receiving...')
-            file = comm.receive_file()
-            comm.dec_file(file, '.')
-        else:
-            #print 'Usage: *.py file_or_dir max_tx_bytes'
-            if len(sys.argv) > 2: comm = RComm('client', int(sys.argv[2]))
-            else: comm = RComm('client')
-            print('start send %s...' % sys.argv[1])
-            file = comm.enc_file([sys.argv[1]])
-            comm.send_file(file)
+

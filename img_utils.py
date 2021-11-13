@@ -16,7 +16,7 @@ class ImgUtils:
     def __init__(self):
         self.bit_group_size = 4
         self.pixel_block_size = 4   # 1 point: 4x4 pixels
-        self.pixel_width_height = [200, 100]
+        self.pixel_width_height = [300, 100]
         # derived
         self.rgb_size = 3
         self.length_size = 32  # bit
@@ -157,7 +157,7 @@ class ImgUtils:
         #print(protect_data.shape, data.shape)
         data = np.concatenate((protect_data, data), axis=2)
         return data
-        
+
     def set_data_to_img(self, text, img_file):
         binary_data = self.string_to_binary(text)
         raw_data = self.gen_data(binary_data)
@@ -167,7 +167,7 @@ class ImgUtils:
         img = self.data_to_img(protect_data)
         img.save(img_file)
         #print('file %s saved!' % img_file)
-        
+
     def img_to_data(self, img):
         data = np.asarray(img)
         #pprint(data)
@@ -255,7 +255,7 @@ class ImgUtils:
             #img.show()
             # 3 * H * W, remove marker
             #data = data[:, 1:, :]
-            
+
             #print('data:\n', data.shape, data[0, 0:10, 0:10])
             return data
 
@@ -304,7 +304,7 @@ class ImgUtils:
         #pprint(rx_data[0, 0:20:4, 0:60:4])
         pprint(tx_data[0, -20::4, -60::4])
         pprint(rx_data[0, -20::4, -60::4])
-        
+
     def data_to_img(self, data):
         #pprint(data[0,0,:])
         # data: (3*H*W) -> (H*W*3)
@@ -326,7 +326,7 @@ class ImgUtils:
         #print(data.shape)
         #pprint(data[0,0,:])
         return data
-        
+
 if __name__ == '__main__':
     img_utils = ImgUtils()
     option = 3
