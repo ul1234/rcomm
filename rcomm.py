@@ -70,7 +70,7 @@ class ZipUtil:
             with open(dest_file, 'wb') as dest:
                 base64.decode(src, dest)
 
-class ClipComm:
+class RComm:
     def __init__(self, is_server = 'server', max_tx_bytes = 2900):
         server_prefix, server_postfix = '<s>', '</s>'
         client_prefix, client_postfix = '<c>', '</c>'
@@ -130,7 +130,7 @@ class ClipComm:
             self.img_viewer.terminate()
             self.img_viewer = None
         if string:
-            img_file = 'test.png'
+            img_file = 'data/test.png'
             self.img_utils.set_data_to_img(string, img_file)
             self.img_viewer = subprocess.Popen(['mspaint', img_file])
             time.sleep(0.1)
@@ -184,7 +184,7 @@ class ClipComm:
             if cmd:
                 self.print_debug('receive cmd: %s' % cmd)
                 return (cmd, payload)
-        raise Exception('%ss timeout, no valid cmd received!' % timeout)
+        raise MyException('%ss timeout, no valid cmd received!' % timeout)
 
     def print_debug(self, str):
         if False:
@@ -458,14 +458,14 @@ if __name__ == '__main__':
         f.close()
     else:
         if len(sys.argv) < 2:
-            comm = ClipComm()
+            comm = RComm()
             print('start receiving...')
             file = comm.receive_file()
             comm.dec_file(file, '.')
         else:
             #print 'Usage: *.py file_or_dir max_tx_bytes'
-            if len(sys.argv) > 2: comm = ClipComm('client', int(sys.argv[2]))
-            else: comm = ClipComm('client')
+            if len(sys.argv) > 2: comm = RComm('client', int(sys.argv[2]))
+            else: comm = RComm('client')
             print('start send %s...' % sys.argv[1])
             file = comm.enc_file([sys.argv[1]])
             comm.send_file(file)
