@@ -76,6 +76,7 @@ class RComm:
         self.tx_b64_file, self.rx_b64_file = '_tx_temp.txt', '_rx_temp.txt'
         if not os.path.isdir(self.trans_path): os.makedirs(self.trans_path)
         self.filetool = FileTool()
+        self.send_cmd_num = 0
 
     def init_tx_rx(self):
         self.tx_text = self.tx_comm_tool.set_text
@@ -122,7 +123,7 @@ class RComm:
             symbol_num = transfer_bytes * total_symbol_num / total_bytes
             percentage = transfer_bytes * 100 / total_bytes
             time_elapse = str(datetime.now() - self.start_transfer_time).split('.')[0]
-            status = '[%s%s] %3d%% TimeElapse: %s' % ('#'*int(symbol_num), ' '*int(total_symbol_num - symbol_num), percentage, time_elapse)
+            status = '[%s%s] %3d%% SendNum: %d TimeElapse: %s' % ('#'*int(symbol_num), ' '*int(total_symbol_num - symbol_num), percentage, self.send_cmd_num, time_elapse)
             sys.stdout.write('\r' + status)
             sys.stdout.flush()
         if not hasattr(self, 'start_transfer_time'): self.start_transfer_time = datetime.now()
@@ -156,6 +157,7 @@ class RComm:
         self.tx_text(text)
         self.cmd_text_for_resend = (cmd, text)
         self.print_debug('send cmd: %s' % cmd)
+        self.send_cmd_num = self.send_cmd_num + 1
 
     def _resend_cmd(self):
         self.tx_reset_text()

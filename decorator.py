@@ -30,3 +30,15 @@ def hook_func(target_func, before_func = None, after_func = None):
         result = target_func(*args, **kwargs)
         return after_func(*args, **kwargs) if after_func else result
     return _func
+
+def _time_evaluate(func):
+    def _func(*args, **kwargs):
+        t0 = time.time()
+        result = func(*args, **kwargs)
+        t1 = time.time()
+        print(r'[%s] %s seconds.' % (func.__name__, str(t1-t0)))
+        return result
+    return _func
+
+time_evaluate = lambda func: func
+#time_evaluate = _time_evaluate

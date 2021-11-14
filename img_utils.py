@@ -6,6 +6,7 @@ from PIL import Image
 from pprint import pprint
 import hashlib
 import codecs, datetime
+from decorator import time_evaluate
 import rs
 try:
     import pyautogui
@@ -15,8 +16,8 @@ except:
 class ImgUtils:
     def __init__(self):
         self.bit_group_size = 4
-        self.pixel_block_size = 4   # 1 point: 4x4 pixels
-        self.pixel_width_height = [300, 100]
+        self.pixel_block_size = 1   # 1 point: 4x4 pixels
+        self.pixel_width_height = [200*4, 100*4]
         # derived
         self.rgb_size = 3
         self.length_size = 32  # bit
@@ -37,7 +38,7 @@ class ImgUtils:
 
     def gen_marker_data(self):
         np.random.seed(1000)
-        data_bit = np.random.randint(0,2,size=(self.pixel_width_height[0]*self.bit_group_size, ))
+        data_bit = np.random.randint(0,2,size=(self.pixel_width_height[0]*self.pixel_block_size, ))
         data_seq = data_bit * 255
         #print('marker data:', data_bit)
         #print('marker seq:', data_seq)
@@ -51,6 +52,7 @@ class ImgUtils:
         print('data payload size: %d, data ' % len(data), data[:20])
         return data
 
+    @time_evaluate
     def gen_data(self, data_payload):
         assert len(data_payload) <= self.max_payload_data_size, 'data_payload len %d > max_payload_data_size %d' % (len(data_payload), self.max_payload_data_size)
         # encode(length( 32 bit) + data_payload + md5 (128 bit) + padding) + padding
@@ -80,6 +82,7 @@ class ImgUtils:
         assert len(data_payload) == self.raw_data_size, 'data_payload len %d != raw_data_size %d' % (len(data_payload), self.raw_data_size)
         return data_payload
 
+    @time_evaluate
     def scramble(self, data):
         data_size = len(data)
         np.random.seed(101)
@@ -88,6 +91,7 @@ class ImgUtils:
         data = data.astype(np.int32)
         return data
 
+    @time_evaluate
     def md5(self, data):
         h = hashlib.md5(data).hexdigest()
         #print('md5: ', h)
@@ -97,6 +101,7 @@ class ImgUtils:
         data_md5 = data_md5.astype(np.int32)
         return data_md5
 
+    @time_evaluate
     def encode_data(self, data, width = 0):
         #pprint(data)
         data = data.reshape(-1, self.bit_group_size)
@@ -117,15 +122,17 @@ class ImgUtils:
         #print(data.shape)
         return data
 
+    @time_evaluate
     def add_marker_data(self, data):
         #return data
         # data: (3*H*W)
         red_marker = self.marker_data_seq
-        #print(red_marker)
+        #print('red_marker:', red_marker.shape)
         #red_marker = np.ones(self.pixel_width_height[0] * self.pixel_block_size) * 255
         other_marker = np.zeros(self.pixel_width_height[0] * self.pixel_block_size * 2)
-        #print(other_marker.shape)
+        #print('other_marker:', other_marker.shape)
         rgb_marker = np.concatenate((red_marker, other_marker))
+        #print('rgb_marker:', rgb_marker.shape)
         rgb_marker = rgb_marker.reshape(self.rgb_size, 1, -1)
         rgb_marker = rgb_marker.astype(np.uint8)
         #pprint(data)
@@ -134,6 +141,7 @@ class ImgUtils:
         #pprint(data)
         return data
 
+    @time_evaluate
     def add_protect_data(self, data):
         #return data
         # data: (3*H*W)
@@ -158,6 +166,7 @@ class ImgUtils:
         data = np.concatenate((protect_data, data), axis=2)
         return data
 
+    @time_evaluate
     def set_data_to_img(self, text, img_file):
         binary_data = self.string_to_binary(text)
         raw_data = self.gen_data(binary_data)
@@ -176,6 +185,7 @@ class ImgUtils:
         #pprint(data)
         return data
 
+    @time_evaluate
     def decode_data(self, data):
         # data:  (3*H*W)
         data = data.reshape(self.rgb_size, -1, self.pixel_block_size, self.pixel_width_height[0], self.pixel_block_size)
@@ -194,6 +204,7 @@ class ImgUtils:
         #print(data_bit)
         return data_bit
 
+    @time_evaluate
     def data_parser(self, data_bit):
         # encode(length( 32 bit) + data_payload + md5 (128 bit) + padding) + padding
         assert len(data_bit) == self.raw_data_size, 'data_bit len %d != raw_data_size %d' % (len(data_bit), self.raw_data_size)
@@ -232,6 +243,7 @@ class ImgUtils:
                 print('check md5 fail, rx md5 != md5, ', rx_md5_data, md5_data)
         return data_payload
 
+    @time_evaluate
     def get_data_by_marker(self, data):
         # 3 * H * W
         _, H, W = data.shape
@@ -259,6 +271,7 @@ class ImgUtils:
             #print('data:\n', data.shape, data[0, 0:10, 0:10])
             return data
 
+    @time_evaluate
     def remove_marker_data(self, data):
         data = data[:, 1:, :]
         return data
@@ -286,6 +299,7 @@ class ImgUtils:
         gap = 50
         return int(self.max_payload_data_size / 8) - gap
 
+    @time_evaluate
     def string_to_binary(self, text):
         b = [('0000' + bin(int(i, 16))[2:])[-4:] for i in text.encode("utf-8").hex()]
         b = ''.join(b)
@@ -305,6 +319,7 @@ class ImgUtils:
         pprint(tx_data[0, -20::4, -60::4])
         pprint(rx_data[0, -20::4, -60::4])
 
+    @time_evaluate
     def data_to_img(self, data):
         #pprint(data[0,0,:])
         # data: (3*H*W) -> (H*W*3)
@@ -315,6 +330,7 @@ class ImgUtils:
         #img.show()
         return img
 
+    @time_evaluate
     def get_screen(self):
         img = pyautogui.screenshot()
         now_str = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
