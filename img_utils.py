@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image
 from pprint import pprint
 import hashlib
-import codecs, datetime
+import codecs, datetime, os
 from decorator import time_evaluate
 import rs
 try:
@@ -16,8 +16,8 @@ except:
 class ImgUtils:
     def __init__(self):
         self.bit_group_size = 4
-        self.pixel_block_size = 1   # 1 point: 4x4 pixels
-        self.pixel_width_height = [200*4, 100*4]
+        self.pixel_block_size = 4   # 1 point: 4x4 pixels
+        self.pixel_width_height = [300, 120]
         # derived
         self.rgb_size = 3
         self.length_size = 32  # bit
@@ -276,8 +276,8 @@ class ImgUtils:
         data = data[:, 1:, :]
         return data
 
-    def get_data_from_screen(self):
-        rx_raw_data = self.get_screen()
+    def get_data_from_screen(self, from_img_file = ''):
+        rx_raw_data = self.get_screen(from_img_file)
         rx_marker_data = self.get_data_by_marker(rx_raw_data)
         #print('rx_marker_data:', rx_marker_data.shape)
         if not rx_marker_data is None:
@@ -331,13 +331,17 @@ class ImgUtils:
         return img
 
     @time_evaluate
-    def get_screen(self):
-        img = pyautogui.screenshot()
-        now_str = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = 'data/screen_%s.png' % now_str
-        img.save(filename)
-        #print('img saved: ', filename)
-        #img = Image.open('data/screen_20211112_224743.png')
+    def get_screen(self, from_img_file = ''):
+        if from_img_file:
+            assert os.path.isfile(from_img_file), 'no file %s found!' % from_img_file
+            img = Image.open(from_img_file)
+        else:
+            img = pyautogui.screenshot()
+            now_str = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = 'data/screen_%s.png' % now_str
+            #img.save(filename)
+            #print('img saved: ', filename)
+            #img = Image.open('data/screen_20211112_224743.png')
         data = self.img_to_data(img)
         #print(data.shape)
         #pprint(data[0,0,:])

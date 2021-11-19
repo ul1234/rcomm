@@ -48,6 +48,7 @@ class RsCode:
         pool = multiprocessing.Pool(processes = self.pool_size)
         data_encoded = pool.map(self.coder.encode_fast, data_iter)
         data_encoded = reduce(lambda x,y:x+y, data_encoded, '')
+        pool.close()
         return data_encoded
 
     @time_evaluate
@@ -98,6 +99,7 @@ class RsCode:
         pool = multiprocessing.Pool(processes = self.pool_size)
         data_decoded = pool.map(self._decode_block, data_iter)
         data_decoded = reduce(lambda x,y:x+y, data_decoded, '')
+        pool.close()
         return data_decoded
 
 
