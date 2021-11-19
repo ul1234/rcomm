@@ -56,7 +56,7 @@ class RsCode:
         assert (len(data_bit)/self.bytes_size) % self.block_size == 0, 'data len: %d, block_size: %d' % (len(data_bit), self.block_size)
         data_bytes = data_bit.reshape(-1, self.bytes_size)@np.flipud(2**np.array(range(self.bytes_size)))
         data_bytes = data_bytes.reshape(-1, self.block_size)
-        data_decoded = self._map_decode(data_bytes) if self.opti else self._decode(data_bytes)
+        data_decoded = self._decode(data_bytes)
         #print('data_decoded:', data_decoded)
         #data_decoded_bytes = data_decoded[:self.data_bytes_len]
         data_decoded_bytes = data_decoded
@@ -70,6 +70,7 @@ class RsCode:
         return data_decode
 
     def _decode_block(self, data_block):
+        decode_success = True
         if self.decode_fail_early_quit:
             decoded_block = '\0'*self.payload_size
         else:
@@ -77,30 +78,38 @@ class RsCode:
                 #decoded_block = self.coder.decode(data_bytes[i, :])[0]
                 decoded_block = self.coder.decode_fast(data_block)[0]
             except:
-                print('Warning: decode block fail!')
+                #print('Warning: decode block fail!')
                 self.decode_fail_early_quit = True
+                decode_success = False
                 decoded_block = '\0'*self.payload_size
         padding_size = self.payload_size - len(decoded_block)
         if padding_size > 0: decoded_block = '\0'*padding_size + decoded_block
         #print('decoded_block:', repr(decoded_block))
-        return decoded_block
+        return (decoded_block, decode_success)
 
     def _decode(self, data_bytes):
         self.decode_fail_early_quit = False
-        data_decoded = []
-        for i in range(data_bytes.shape[0]):
-            decoded_block = self._decode_block(data_bytes[i, :])
-            data_decoded += decoded_block
+        data_decoded, err_blocks = self._map_decode(data_bytes) if self.opti else self._normal_decode(data_bytes)
+        if err_blocks: print('Total data blocks %d. Err blocks: %s' % (data_bytes.shape[1], err_blocks))
         return data_decoded
+        
+    def _normal_decode(self, data_bytes):
+        data_decoded = []
+        err_blocks = []
+        for i in range(data_bytes.shape[0]):
+            decoded_block, decode_success = self._decode_block(data_bytes[i, :])
+            data_decoded += decoded_block
+            if not decode_success: err_blocks.append(i)
+        return (data_decoded, err_blocks)
 
     def _map_decode(self, data_bytes):
-        self.decode_fail_early_quit = False
         data_iter = [data_bytes[i, :] for i in range(data_bytes.shape[0])]
         pool = multiprocessing.Pool(processes = self.pool_size)
-        data_decoded = pool.map(self._decode_block, data_iter)
-        data_decoded = reduce(lambda x,y:x+y, data_decoded, '')
+        data_decoded_with_flag = pool.map(self._decode_block, data_iter)
+        data_decoded = reduce(lambda x,y:x+y[0], data_decoded_with_flag, '')
+        err_blocks = [i for (i, (_, success)) in enumerate(data_decoded_with_flag) if not success]
         pool.close()
-        return data_decoded
+        return (data_decoded, err_blocks)
 
 
 if __name__ == '__main__':

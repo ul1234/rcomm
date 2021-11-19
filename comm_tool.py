@@ -37,10 +37,10 @@ class CommTool:
 
     def empty_text(self):
         pass
-        
+
     def clear_get_text(self):
         self.reset_text()
-        
+
     def close(self):
         pass
 
@@ -99,7 +99,7 @@ class ImgComm(CommTool):
         self.img_viewer = None
         self.temp_tx_img_file = 'test.png'
         self.init_startupinfo()
-        
+
     def init_startupinfo(self):
         STARTF_USESHOWWINDOW = 1
         SW_MAXIMIZE = 3
@@ -133,6 +133,7 @@ class ImgComm(CommTool):
     def clear_set_text(self):
         if not self.img_viewer is None:
             self.img_viewer.terminate()
+            self.img_viewer.wait()
             self.img_viewer = None
 
     def close(self):

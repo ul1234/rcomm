@@ -14,10 +14,10 @@ except:
     pass
 
 class ImgUtils:
-    def __init__(self):
-        self.bit_group_size = 4
-        self.pixel_block_size = 4   # 1 point: 4x4 pixels
-        self.pixel_width_height = [300, 120]
+    def __init__(self, pixel_width = 1300, pixel_hight = 500):   # resolution: 1366*758
+        self.bit_group_size = 6 #4
+        self.pixel_block_size = 2 #4   # 1 point: 4x4 pixels
+        self.pixel_width_height = [int(pixel_width / self.pixel_block_size), int(pixel_hight / self.pixel_block_size)]
         # derived
         self.rgb_size = 3
         self.length_size = 32  # bit

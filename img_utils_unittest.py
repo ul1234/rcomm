@@ -28,7 +28,7 @@ class ImgUtilsTest(unittest.TestCase):
         self.img_utils.set_data_to_img(input_text, self.temp_tx_img_file)
         output_text = self.img_utils.get_data_from_screen(self.temp_tx_img_file)
         self.assertEqual(input_text, output_text)
-        
+
     def test_short_seq(self):
         input_text = 'abcdefghijklmn'
         self._test_with_img_file(input_text)
@@ -45,7 +45,7 @@ class ImgUtilsTest(unittest.TestCase):
         img_viewer.terminate()
         img_viewer.wait()
         self.assertEqual(input_text, output_text)
-        
+
     def test_short_seq_screen(self):
         input_text = 'abcdefghijklmn'
         self._test_with_screen(input_text)
