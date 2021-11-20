@@ -4,6 +4,7 @@
 from img_utils import ImgUtils
 import subprocess
 import unittest, time
+import numpy as np
 
 class ImgUtilsTest(unittest.TestCase):
     def setUp(self):
@@ -53,6 +54,15 @@ class ImgUtilsTest(unittest.TestCase):
     def test_long_seq_screen(self):
         input_text = 'abcdefghijklmn' * 1000
         self._test_with_screen(input_text)
+
+    def test_permute(self):
+        data_size = self.img_utils.raw_data_size
+        data = np.array(range(data_size), dtype=np.int32)
+        permute_data = self.img_utils.permute(data)
+        #print(permute_data)
+        unpermute_data = self.img_utils.unpermute(permute_data)
+        #print(unpermute_data)
+        self.assertEqual(list(data), list(unpermute_data))
 
 
 if __name__ == "__main__":

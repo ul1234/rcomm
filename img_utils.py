@@ -14,10 +14,11 @@ except:
     pass
 
 class ImgUtils:
-    def __init__(self, pixel_width = 1300, pixel_hight = 500):   # resolution: 1366*758
-        self.bit_group_size = 6 #4
-        self.pixel_block_size = 2 #4   # 1 point: 4x4 pixels
+    def __init__(self, pixel_width = 1300, pixel_hight = 480):   # resolution: 1366*758
+        self.bit_group_size = 4 #4
+        self.pixel_block_size = 1 #4   # 1 point: 4x4 pixels
         self.pixel_width_height = [int(pixel_width / self.pixel_block_size), int(pixel_hight / self.pixel_block_size)]
+        self.enable_permute = True
         # derived
         self.rgb_size = 3
         self.length_size = 32  # bit
@@ -35,6 +36,9 @@ class ImgUtils:
         print('max data size: %d' % self.max_payload_data_size)
         self.marker_data_bit, self.marker_data_seq = self.gen_marker_data()
         self.coder = rs.RsCode(self.rs_block_size, self.rs_payload_size)
+        if self.enable_permute:
+            self.permute_index = self._permute_index(self.raw_data_size)
+            self.unpermute_index = self._unpermute_index(self.raw_data_size, self.permute_index)
 
     def gen_marker_data(self):
         np.random.seed(1000)
@@ -79,8 +83,40 @@ class ImgUtils:
         data_payload = np.concatenate((data_payload, self.scramble(np.zeros(self.raw_data_size-data_size_after_encode))))
         #print('after scram:', data_payload[:20])
         #print(data_payload.shape)
+        if self.enable_permute: data_payload = self.permute(data_payload)
         assert len(data_payload) == self.raw_data_size, 'data_payload len %d != raw_data_size %d' % (len(data_payload), self.raw_data_size)
         return data_payload
+
+    @time_evaluate
+    def _permute_index(self, data_size, block_size = 0):
+        INVALID_DATA = -1
+        block_size = block_size or int(np.sqrt(data_size))
+        padding_size = int(np.ceil(data_size / block_size)) * block_size - data_size
+        index  = np.concatenate((range(data_size), np.ones(padding_size, dtype=np.int32) * INVALID_DATA))
+        index = index.reshape(-1, block_size).T   # transpose
+        index = index.reshape(-1)
+        index = list(filter(lambda x: x != INVALID_DATA, index))  # remove INVALID_DATA
+        return index
+
+    @time_evaluate
+    def _unpermute_index(self, data_size, permute_index):
+        unpermute_index = np.zeros((1, data_size))
+        unpermute_index[0, permute_index] = np.array(range(data_size))
+        unpermute_index = unpermute_index.reshape(-1).astype(np.int32)
+        #print('unpermute_index:', unpermute_index)
+        return unpermute_index
+
+    @time_evaluate
+    def permute(self, data):
+        assert len(data) == self.raw_data_size, 'invalid data size %d to permute' % len(data)
+        permute_data = data[self.permute_index]
+        return permute_data
+
+    @time_evaluate
+    def unpermute(self, data):
+        assert len(data) == self.raw_data_size, 'invalid data size %d to unpermute' % len(data)
+        unpermute_data = data[self.unpermute_index]
+        return unpermute_data
 
     @time_evaluate
     def scramble(self, data):
@@ -208,6 +244,7 @@ class ImgUtils:
     def data_parser(self, data_bit):
         # encode(length( 32 bit) + data_payload + md5 (128 bit) + padding) + padding
         assert len(data_bit) == self.raw_data_size, 'data_bit len %d != raw_data_size %d' % (len(data_bit), self.raw_data_size)
+        if self.enable_permute: data_bit = self.unpermute(data_bit)
         #print('before scram:', data_bit[:20])
         data_bit = data_bit[:self.max_data_size_after_encode]
         data_bit = self.scramble(data_bit)
