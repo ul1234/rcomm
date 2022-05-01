@@ -16,7 +16,9 @@ class RCommClient(RComm):
 
 if __name__ == '__main__':
     assert len(sys.argv) == 2, 'Usage: python rcomm_client.py file_or_dir'
-    comm = RCommClient(client_to_server = 'img')
+    #comm = RCommClient(client_to_server = 'img')
+    #comm = RCommClient()
+    comm = RCommClient(server_to_client = 'interactive')
     print('start send %s...' % sys.argv[1])
     file = comm.enc_file([sys.argv[1]])
     comm.send_file(file)

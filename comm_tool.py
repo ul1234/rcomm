@@ -18,6 +18,8 @@ def get_comm_tool(comm, print_debug = None):
         c = ClipComm(print_debug)
     elif comm == 'img':
         c = ImgComm(print_debug)
+    elif comm == 'interactive':
+        c = InteractiveComm(print_debug)
     else:
         raise Exception('no comm type %s' % comm)
     return c
@@ -37,6 +39,9 @@ class CommTool:
 
     def empty_text(self):
         pass
+        
+    def expect_text(self, expect):
+        pass
 
     def clear_get_text(self):
         self.reset_text()
@@ -44,6 +49,50 @@ class CommTool:
     def close(self):
         pass
 
+class InteractiveComm(CommTool):
+    def __init__(self, print_debug = None):
+        CommTool.__init__(self)
+        self.reset_text_count = 0
+        pyperclip.set_print_debug_func(self.print_debug)
+        
+    def get_max_tx_text_size(self):
+        return 1000000
+        
+    def expect_text(self, cmd, cmd_to_text_func = None):
+        self.expected_cmd = cmd
+        self.expected_cmd_to_text_func = cmd_to_text_func
+
+    def get_text(self):
+        result = input('\n%s?' % self.expected_cmd)
+        result = result or self.expected_cmd
+        if self.expected_cmd_to_text_func: result = self.expected_cmd_to_text_func(result)
+        print('result is %s\n' % result)
+        return result
+
+    def set_text(self, text):
+        if False:
+            while True:
+                try:
+                    win32clipboard.OpenClipboard()
+                    win32clipboard.EmptyClipboard()
+                    break
+                except:
+                    self.print_debug('set clipboard failed, try again.')
+                    time.sleep(0.5)
+            win32clipboard.SetClipboardData(win32con.CF_TEXT, text)
+            win32clipboard.CloseClipboard()
+        else:
+            pyperclip.copy(text)
+
+    def reset_text(self):
+        self.set_text('[%d]reset text...' % (self.reset_text_count))
+        self.reset_text_count += 1
+        time.sleep(0.2)
+
+    def empty_text(self):
+        self.set_text('')
+        time.sleep(0.2)
+        
 class ClipComm(CommTool):
     def __init__(self, print_debug = None):
         CommTool.__init__(self)
@@ -51,7 +100,7 @@ class ClipComm(CommTool):
         pyperclip.set_print_debug_func(self.print_debug)
 
     def get_max_tx_text_size(self):
-        return 200000
+        return 1000000
 
     def get_text(self):
         try:

@@ -1,8 +1,14 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-import unireedsolomon as rs
-import numpy as np
+try:
+    import unireedsolomon as rs
+except:
+    print('Try: pip install unireedsolomon')
+try:
+    import numpy as np
+except:
+    print('Try: pip install numpy')
 from decorator import time_evaluate
 import multiprocessing
 from functools import reduce

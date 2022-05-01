@@ -1,8 +1,14 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-import numpy as np
-from PIL import Image
+try:
+    import numpy as np
+except:
+    print('Try: pip install numpy')
+try:
+    from PIL import Image
+except:
+    print('Try: pip install pillow')
 from pprint import pprint
 import hashlib
 import codecs, datetime, os
@@ -13,10 +19,15 @@ try:
 except:
     pass
 
+# change the below
+# pixel_width = 11300, pixel_hight = 480):   # resolution: 1366*758
+# pixel_width = 1800, pixel_hight = 800):   # resolution: 1366*758
+# self.pixel_block_size = 4 #4   # 1 point: 4x4 pixels
+
 class ImgUtils:
-    def __init__(self, pixel_width = 1300, pixel_hight = 480):   # resolution: 1366*758
+    def __init__(self, pixel_width = 1800, pixel_hight = 800):   # resolution: 1366*758
         self.bit_group_size = 4 #4
-        self.pixel_block_size = 1 #4   # 1 point: 4x4 pixels
+        self.pixel_block_size = 4 #4   # 1 point: 4x4 pixels
         self.pixel_width_height = [int(pixel_width / self.pixel_block_size), int(pixel_hight / self.pixel_block_size)]
         self.enable_permute = True
         # derived
@@ -386,7 +397,7 @@ class ImgUtils:
 
 if __name__ == '__main__':
     img_utils = ImgUtils()
-    option = 3
+    option = 0
 
     if option == 1:
         data = img_utils.string_to_binary('abcdefghijklmn!@#$%')
@@ -399,6 +410,9 @@ if __name__ == '__main__':
         marker_data = img_utils.add_marker_data(enc_data)
         protect_data = img_utils.add_protect_data(marker_data)
         img = img_utils.data_to_img(protect_data)
+    elif option == 3:
+        img_utils.get_screen()
+        print('test get screen')
     else:
         raw_data = img_utils.get_data()
         raw_data = img_utils.gen_data(raw_data)

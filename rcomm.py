@@ -159,6 +159,14 @@ class RComm:
         self.print_debug('send cmd: %s' % cmd)
         self.send_cmd_num = self.send_cmd_num + 1
 
+    def expect_cmd(self, cmd):
+        def _cmd_to_text(cmd):
+            text = self.rx_prefix + cmd + self.delimiter
+            text += self.rx_postfix
+            return text
+        #print('expect text: %s' % cmd)
+        self.rx_comm_tool.expect_text(cmd, cmd_to_text_func = _cmd_to_text)
+        
     def _resend_cmd(self):
         self.tx_reset_text()
         time.sleep(0.3)
@@ -246,6 +254,7 @@ class RComm:
             while True:
                 if state == TX_FILE_HEAD_STATE:
                     self.send_cmd('FILE %s %d' % (os.path.basename(filename)[:3], size))  # magic: filename[:3]
+                    self.expect_cmd('OK 0')
                     state = TX_STATE
                 elif state == TX_STATE:
                     rx_bytes = self._wait_for_cmd(state, 'OK')
@@ -253,8 +262,10 @@ class RComm:
                     if remain_bytes <= self.max_tx_bytes:
                         tx_len = remain_bytes
                         state = TX_END_STATE  # the last packet
+                        self.expect_cmd('FINISH %d' % (rx_bytes + tx_len))
                     else:
                         tx_len = self.max_tx_bytes
+                        self.expect_cmd('OK %d' % (rx_bytes + tx_len))
                     self.print_transfer(size, rx_bytes)
                     f.seek(rx_bytes)
                     self.send_cmd('PACKET %d %d' % (rx_bytes, tx_len), f.read(tx_len).decode())
