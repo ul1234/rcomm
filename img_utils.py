@@ -20,14 +20,20 @@ except:
     pass
 
 # change the below
-# pixel_width = 11300, pixel_hight = 480):   # resolution: 1366*758
+# pixel_width = 1200, pixel_hight = 480):   # resolution: 1366*758
 # pixel_width = 1800, pixel_hight = 800):   # resolution: 1366*758
+# pixel_width = 2000, pixel_hight = 1200, pixel_block_size = 6):   # resolution: 2560*1600
+# pixel_width = 2400, pixel_hight = 1300, pixel_block_size = 5):   # resolution: 2560*1600
 # self.pixel_block_size = 4 #4   # 1 point: 4x4 pixels
 
 class ImgUtils:
-    def __init__(self, pixel_width = 1800, pixel_hight = 800):   # resolution: 1366*758
+    ONLY_CENTER_PIXELS_FOR_DECODE = True
+    SAVE_SCREEN_TO_FILE = False
+    SEARCH_MARKER_IN_PIXEL_RANGE = 1    # search marker in pixel range [-1, 0, 1]
+    
+    def __init__(self, pixel_width = 2400, pixel_hight = 1300, pixel_block_size = 5):   # resolution: 1366*758
         self.bit_group_size = 4 #4
-        self.pixel_block_size = 4 #4   # 1 point: 4x4 pixels
+        self.pixel_block_size = pixel_block_size #4   # 1 point: 4x4 pixels
         self.pixel_width_height = [int(pixel_width / self.pixel_block_size), int(pixel_hight / self.pixel_block_size)]
         self.enable_permute = True
         # derived
@@ -47,6 +53,7 @@ class ImgUtils:
         print('max data size: %d' % self.max_payload_data_size)
         self.marker_data_bit, self.marker_data_seq = self.gen_marker_data()
         self.coder = rs.RsCode(self.rs_block_size, self.rs_payload_size)
+        self.marker_index_found = None
         if self.enable_permute:
             self.permute_index = self._permute_index(self.raw_data_size)
             self.unpermute_index = self._unpermute_index(self.raw_data_size, self.permute_index)
@@ -168,7 +175,42 @@ class ImgUtils:
         #pprint(data)
         #print(data.shape)
         return data
+        
+    def gen_calibration_data(self):
+        # self.factor = 16, one Red is 256/16 = 16 points
+        # we make 7 rows of pixels, [16 reds, 16 greens, 16 blues, R+G, R+B, G+B, R+G+B]
+        # Red: [8, 24, 40, ..., 248], 16 reds, green and blue is 0
+        # one pixel block is 16*16
+        # the screen size should be H * W = [16*4, 16*16] = 64*256
+        assert self.bit_group_size == 4, 'bit_group_size should be 4 in calibration.'
+        assert self.pixel_block_size == 16, 'pixel_block_size should be 16 in calibration.'
+        width_pixels = 16 # 256/self.factor
+        height_pixels = 7
+        rgb_data = np.array(range(width_pixels)).astype(np.uint8) * self.factor + self.factor/2
+        zero_data = np.zeros(width_pixels)
+        # 3*H*W
+        red = np.concatenate((rgb_data, zero_data, zero_data, rgb_data, rgb_data, zero_data, rgb_data))
+        green = np.concatenate((zero_data, rgb_data, zero_data, rgb_data, zero_data, rgb_data, rgb_data))
+        blue = np.concatenate((zero_data, zero_data, rgb_data, zero_data, rgb_data, rgb_data, rgb_data))
+        data = np.concatenate((red, green, blue)).astype(np.uint8)
+        pprint(data)
+        # replace one pixel with 16*16 block
+        data = data.repeat(self.repeat_size).reshape(self.rgb_size, -1, width_pixels, self.pixel_block_size, self.pixel_block_size)
+        #pprint(data)
+        #print(data.shape)
+        data = data.swapaxes(2,3)  # (0,1,2,3,4) -> (0,1,3,2,4)
+        data = data.reshape(self.rgb_size, -1, width_pixels * self.pixel_block_size)  # (3*H*W)
+        pprint(data)
+        return data
 
+    def get_calibration_img(self, img_file):
+        enc_data = self.gen_calibration_data()
+        marker_data = self.add_marker_data(enc_data)
+        protect_data = self.add_protect_data(marker_data)
+        img = self.data_to_img(protect_data)
+        img.save(img_file)
+        #print('file %s saved!' % img_file)
+        
     @time_evaluate
     def add_marker_data(self, data):
         #return data
@@ -238,7 +280,21 @@ class ImgUtils:
         data = data.reshape(self.rgb_size, -1, self.pixel_block_size, self.pixel_width_height[0], self.pixel_block_size)
         data = data.swapaxes(2,3)  # (0,1,2,3,4) -> (0,1,3,2,4)
         data = data.reshape(self.rgb_size, -1, self.repeat_size)  # 3*(H*W)*16
-        data = np.round(np.mean(data, 2)).reshape(-1)  # 3*(H*W)
+        
+        if ImgUtils.ONLY_CENTER_PIXELS_FOR_DECODE:
+            if self.pixel_block_size == 4:
+                data = data[:, :, [5,6,9,10]]  # only get the center 4 pixels, for 4x4
+            elif self.pixel_block_size == 5:
+                data = data[:, :, 12]  # only get the center 4 pixels, for 5x5
+            elif self.pixel_block_size == 6:
+                data = data[:, :, [14,15,20,21]]  # only get the center 4 pixels, for 6x6
+        #print('size:')
+        #print(data.shape)
+        #pprint(data)
+        if np.ndim(data) == 3:
+            data = np.round(np.mean(data, 2)).reshape(-1)  # 3*(H*W)
+        else:
+            data = data.reshape(-1)
         #print(data)
         data = np.floor(data/self.factor)
         #print(data)
@@ -297,19 +353,36 @@ class ImgUtils:
         _, H, W = data.shape
         data = data.astype(np.int32)
         marker_seq = self.marker_data_seq.astype(np.int32) - 128
+        if marker_seq.size > 500: marker_seq = marker_seq[:500]  # long marker leads to long time to find marker
+        #print(marker_seq.shape)
         data_seq = data[0,:,:].reshape(-1) - 128
-        conv = np.convolve(data_seq, np.flipud(marker_seq), 'valid') / marker_seq.size
-        conv = conv.astype(np.int32)
-        index = np.argmax(conv)
-        #print(conv[index-10:index+10])
-        #print(conv[0:index+10])
-        #pprint(marker_seq[0:20])
-        #pprint(data_seq[index:index+20])
+        if self.marker_index_found is None:
+            conv = np.convolve(data_seq, np.flipud(marker_seq), 'valid') / marker_seq.size
+            conv = conv.astype(np.int32)
+            index = np.argmax(conv)
+            #print(conv[index-10:index+10])
+            #print(conv[0:index+10])
+            #pprint(marker_seq[0:20])
+            #pprint(data_seq[index:index+20])
+            max_conv_value = conv[index]
+        else:
+            search_range = ImgUtils.SEARCH_MARKER_IN_PIXEL_RANGE * W + self.pixel_block_size
+            data_seq = data_seq[self.marker_index_found - search_range:self.marker_index_found + search_range]
+            conv = np.convolve(data_seq, np.flipud(marker_seq), 'valid') / marker_seq.size
+            conv = conv.astype(np.int32)
+            index = np.argmax(conv)
+            max_conv_value = conv[index]
+            index = index + self.marker_index_found - search_range
         row_index, col_index = divmod(index, W)
-        #print('row index %d, col index %d, max value %d' % (row_index, col_index, conv[index]))
-        if conv[index] < 10000:
+        #print('row index %d, col index %d, max value %d' % (row_index, col_index, max_conv_value))
+        if max_conv_value < 5000: #10000:
+            #self.marker_index_found = None
             return None
         else:
+            if not self.marker_index_found is None: 
+                #print('previous index is %d, current index is %d.' % (self.marker_index_found, index))
+                pass
+            self.marker_index_found = index
             data = data[:, row_index:row_index+self.pixel_width_height[1]*self.pixel_block_size+1, col_index:col_index+self.pixel_width_height[0]*self.pixel_block_size]
             #img = self.data_to_img(data)
             #img.show()
@@ -324,24 +397,30 @@ class ImgUtils:
         data = data[:, 1:, :]
         return data
 
-    def get_data_from_screen(self, from_img_file = ''):
+    @time_evaluate
+    def get_pixel_data_from_screen(self, from_img_file = ''):
         rx_raw_data = self.get_screen(from_img_file)
         rx_marker_data = self.get_data_by_marker(rx_raw_data)
         #print('rx_marker_data:', rx_marker_data.shape)
-        if not rx_marker_data is None:
-            rx_data = self.remove_marker_data(rx_marker_data)
-            #print('rx_data:', rx_data.shape)
-            dec_data = self.decode_data(rx_data)
-            #print('dec_data:', dec_data.shape)
-            dec_data_payload = self.data_parser(dec_data)
-            #print('dec_data_payload:', dec_data_payload.shape)
-        else:
-            dec_data_payload = None
-        if not dec_data_payload is None:
-            text = self.binary_to_string(dec_data_payload)
-            #print('img to text', text)
-            return text
-        return ''
+        if rx_marker_data is None: return None
+        rx_data = self.remove_marker_data(rx_marker_data)
+        #print('rx_data:', rx_data.shape)
+        return rx_data
+
+    @time_evaluate
+    def get_data_from_screen(self, from_img_file = ''):
+        rx_data = self.get_pixel_data_from_screen(from_img_file)
+        if rx_data is None: return ''
+        
+        dec_data = self.decode_data(rx_data)
+        #print('dec_data:', dec_data.shape)
+        dec_data_payload = self.data_parser(dec_data)
+        if dec_data_payload is None: return ''
+        #print('dec_data_payload:', dec_data_payload.shape)
+        text = self.binary_to_string(dec_data_payload)
+        #print('img to text', text)
+        return text
+        
 
     def get_max_text_size(self):
         gap = 50
@@ -385,19 +464,21 @@ class ImgUtils:
             img = Image.open(from_img_file)
         else:
             img = pyautogui.screenshot()
-            now_str = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = 'data/screen_%s.png' % now_str
-            #img.save(filename)
-            #print('img saved: ', filename)
-            #img = Image.open('data/screen_20211112_224743.png')
+            if ImgUtils.SAVE_SCREEN_TO_FILE:
+                now_str = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                filename = 'data/screen_%s.png' % now_str
+                img.save(filename)
+                print('img saved: ', filename)
+                #img = Image.open('data/screen_20220501_180007.png')
         data = self.img_to_data(img)
         #print(data.shape)
         #pprint(data[0,0,:])
         return data
 
+
 if __name__ == '__main__':
     img_utils = ImgUtils()
-    option = 0
+    option = 3
 
     if option == 1:
         data = img_utils.string_to_binary('abcdefghijklmn!@#$%')
@@ -411,8 +492,12 @@ if __name__ == '__main__':
         protect_data = img_utils.add_protect_data(marker_data)
         img = img_utils.data_to_img(protect_data)
     elif option == 3:
-        img_utils.get_screen()
-        print('test get screen')
+        #data = img_utils.get_screen()
+        data = img_utils.get_data_from_screen('data/screen_20220504_102051.png')
+        print('test get screen, data:\n', data)
+    elif option == 4:
+        img_utils = ImgUtils(pixel_width = 16*16, pixel_hight = 16*7, pixel_block_size = 16)
+        img_utils.get_calibration_img('data/calibration.png')
     else:
         raw_data = img_utils.get_data()
         raw_data = img_utils.gen_data(raw_data)

@@ -7,8 +7,8 @@ from rcomm import RComm
 from comm_tool import get_comm_tool
 
 class RCommServer(RComm):
-    def __init__(self, client_to_server = 'clip', server_to_client = 'clip'):
-        RComm.__init__(self)
+    def __init__(self, log_to_file = True, client_to_server = 'clip', server_to_client = 'clip'):
+        RComm.__init__(self, log_to_file = log_to_file)
         self.tx_prefix, self.tx_postfix = self.server_prefix, self.server_postfix
         self.rx_prefix, self.rx_postfix = self.client_prefix, self.client_postfix
         self.tx_comm_tool = get_comm_tool(server_to_client, self.print_debug)
@@ -59,8 +59,8 @@ class RCommServer(RComm):
 
 if __name__ == '__main__':
     assert len(sys.argv) == 1, 'Usage: python rcomm_server.py'
-    #comm = RCommServer(client_to_server = 'img')
-    comm = RCommServer()
+    comm = RCommServer(client_to_server = 'img')
+    #comm = RCommServer()
     print('start receiving...')
     file = comm.receive_file()
     comm.dec_file(file, '.')

@@ -40,7 +40,7 @@ class CommTool:
     def empty_text(self):
         pass
         
-    def expect_text(self, expect):
+    def expect_text(self, expect, cmd_to_text_func = None):
         pass
 
     def clear_get_text(self):
@@ -66,7 +66,7 @@ class InteractiveComm(CommTool):
         result = input('\n%s?' % self.expected_cmd)
         result = result or self.expected_cmd
         if self.expected_cmd_to_text_func: result = self.expected_cmd_to_text_func(result)
-        print('result is %s\n' % result)
+        #print('result is %s\n' % result)
         return result
 
     def set_text(self, text):

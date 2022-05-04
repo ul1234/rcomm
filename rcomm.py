@@ -62,7 +62,7 @@ class ZipUtil:
                 base64.decode(src, dest)
 
 class RComm:
-    def __init__(self):
+    def __init__(self, log_to_file = True):
         self.server_prefix, self.server_postfix = '<s>', '</s>'
         self.client_prefix, self.client_postfix = '<c>', '</c>'
         self.delimiter = '<p>\r\n'
@@ -77,6 +77,7 @@ class RComm:
         if not os.path.isdir(self.trans_path): os.makedirs(self.trans_path)
         self.filetool = FileTool()
         self.send_cmd_num = 0
+        self.log_to_file = log_to_file
 
     def init_tx_rx(self):
         self.tx_text = self.tx_comm_tool.set_text
@@ -103,7 +104,7 @@ class RComm:
         raise MyException('%ss timeout, no valid cmd received!' % timeout)
 
     def print_debug(self, text):
-        if False:
+        if not self.log_to_file:
             self.print_(text)
         else:
             if not hasattr(self, 'init_log_file'):

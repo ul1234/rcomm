@@ -55,6 +55,7 @@ class RsCode:
         data_encoded = pool.map(self.coder.encode_fast, data_iter)
         data_encoded = reduce(lambda x,y:x+y, data_encoded, '')
         pool.close()
+        pool.join()
         return data_encoded
 
     @time_evaluate
@@ -115,6 +116,7 @@ class RsCode:
         data_decoded = reduce(lambda x,y:x+y[0], data_decoded_with_flag, '')
         err_blocks = [i for (i, (_, success)) in enumerate(data_decoded_with_flag) if not success]
         pool.close()
+        pool.join()
         return (data_decoded, err_blocks)
 
 
