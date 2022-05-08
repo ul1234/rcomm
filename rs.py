@@ -14,13 +14,17 @@ import multiprocessing
 from functools import reduce
 
 class RsCode:
+    DECODER_CPU_NUM = 3
+    ENCODER_CPU_NUM = 3
+
     def __init__(self, n, k):
         assert n > k
         self.coder = rs.RSCoder(n, k)
         self.block_size = n
         self.payload_size = k
         self.bytes_size = 8
-        self.pool_size = 3
+        self.decoder_pool_size = RsCode.DECODER_CPU_NUM
+        self.encoder_pool_size = RsCode.ENCODER_CPU_NUM
         self.opti = True
 
     @time_evaluate
@@ -51,7 +55,7 @@ class RsCode:
 
     def _map_encode(self, data_bytes):
         data_iter = [data_bytes[i, :] for i in range(data_bytes.shape[0])]
-        pool = multiprocessing.Pool(processes = self.pool_size)
+        pool = multiprocessing.Pool(processes = self.encoder_pool_size)
         data_encoded = pool.map(self.coder.encode_fast, data_iter)
         data_encoded = reduce(lambda x,y:x+y, data_encoded, '')
         pool.close()
@@ -110,8 +114,9 @@ class RsCode:
         return (data_decoded, err_blocks)
 
     def _map_decode(self, data_bytes):
+        #print('total decode blocks: %d' % data_bytes.shape[0])
         data_iter = [data_bytes[i, :] for i in range(data_bytes.shape[0])]
-        pool = multiprocessing.Pool(processes = self.pool_size)
+        pool = multiprocessing.Pool(processes = self.decoder_pool_size)
         data_decoded_with_flag = pool.map(self._decode_block, data_iter)
         data_decoded = reduce(lambda x,y:x+y[0], data_decoded_with_flag, '')
         err_blocks = [i for (i, (_, success)) in enumerate(data_decoded_with_flag) if not success]

@@ -19,6 +19,8 @@ if __name__ == '__main__':
     comm = RCommClient(client_to_server = 'img')
     #comm = RCommClient()
     #comm = RCommClient(server_to_client = 'interactive')
+    #comm = RCommClient(client_to_server = 'img_to_file', server_to_client = 'auto')
+    #comm = RCommClient(client_to_server = 'img_from_file')
     print('start send %s...' % sys.argv[1])
     file = comm.enc_file([sys.argv[1]])
     comm.send_file(file)

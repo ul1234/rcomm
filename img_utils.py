@@ -15,7 +15,7 @@ import codecs, datetime, os
 from decorator import time_evaluate
 import rs
 try:
-    import pyautogui
+    import pyautogui   # only server use this to get screenshot
 except:
     pass
 
@@ -23,25 +23,26 @@ except:
 # pixel_width = 1200, pixel_hight = 480):   # resolution: 1366*758
 # pixel_width = 1800, pixel_hight = 800):   # resolution: 1366*758
 # pixel_width = 2000, pixel_hight = 1200, pixel_block_size = 6):   # resolution: 2560*1600
-# pixel_width = 2400, pixel_hight = 1300, pixel_block_size = 5):   # resolution: 2560*1600
+# pixel_width = 2450, pixel_hight = 1300, pixel_block_size = 5):   # resolution: 2560*1600
 # self.pixel_block_size = 4 #4   # 1 point: 4x4 pixels
 
 class ImgUtils:
     ONLY_CENTER_PIXELS_FOR_DECODE = True
     SAVE_SCREEN_TO_FILE = False
     SEARCH_MARKER_IN_PIXEL_RANGE = 1    # search marker in pixel range [-1, 0, 1]
-    
-    def __init__(self, pixel_width = 2400, pixel_hight = 1300, pixel_block_size = 5):   # resolution: 1366*758
+    PERMUTE_ENABLE = False
+
+    def __init__(self, pixel_width = 2450, pixel_hight = 1300, pixel_block_size = 5):   # resolution: 1366*758
         self.bit_group_size = 4 #4
         self.pixel_block_size = pixel_block_size #4   # 1 point: 4x4 pixels
         self.pixel_width_height = [int(pixel_width / self.pixel_block_size), int(pixel_hight / self.pixel_block_size)]
-        self.enable_permute = True
+        self.enable_permute = ImgUtils.PERMUTE_ENABLE
         # derived
         self.rgb_size = 3
         self.length_size = 32  # bit
         self.md5_size = 128  # bit
-        self.rs_block_size = 255
-        self.rs_payload_size = 231
+        self.rs_block_size = 255  # bytes
+        self.rs_payload_size = 231  # bytes
         self.repeat_size = self.pixel_block_size * self.pixel_block_size
         self.mul_array = 2**np.array(range(0, self.bit_group_size))  # [1,2,4,8]
         self.factor = 256/(2**self.bit_group_size)
@@ -51,20 +52,47 @@ class ImgUtils:
         self.max_data_size_after_encode = rs_code_block_num * self.rs_block_size * 8
         self.max_payload_data_size = self.max_data_size_before_encode - self.md5_size - self.length_size
         print('max data size: %d' % self.max_payload_data_size)
-        self.marker_data_bit, self.marker_data_seq = self.gen_marker_data()
+        self.gen_marker_data()
+        self.protect_data_seq_top, self.protect_data_seq_left = self.gen_protect_data()
         self.coder = rs.RsCode(self.rs_block_size, self.rs_payload_size)
         self.marker_index_found = None
         if self.enable_permute:
             self.permute_index = self._permute_index(self.raw_data_size)
             self.unpermute_index = self._unpermute_index(self.raw_data_size, self.permute_index)
 
-    def gen_marker_data(self):
-        np.random.seed(1000)
+    def _gen_marker_data(self, seed):
+        np.random.seed(seed)
         data_bit = np.random.randint(0,2,size=(self.pixel_width_height[0]*self.pixel_block_size, ))
-        data_seq = data_bit * 255
+        red_marker = data_bit * 255
+        marker_seq = (red_marker - 128).astype(np.int32)
         #print('marker data:', data_bit)
-        #print('marker seq:', data_seq)
-        return (data_bit, data_seq)
+        #print('red_marker:', red_marker.shape)
+        #red_marker = np.ones(self.pixel_width_height[0] * self.pixel_block_size) * 255
+        other_marker = np.zeros(self.pixel_width_height[0] * self.pixel_block_size * 2)
+        #print('other_marker:', other_marker.shape)
+        rgb_marker = np.concatenate((red_marker, other_marker))
+        #print('rgb_marker:', rgb_marker.shape)
+        rgb_marker = rgb_marker.reshape(self.rgb_size, 1, -1)
+        rgb_marker = rgb_marker.astype(np.uint8)
+        return (marker_seq, rgb_marker)
+        
+    def gen_marker_data(self):
+        self.marker_seq_top, self.marker_data_top = self._gen_marker_data(1000)
+        self.marker_seq_bottom, self.marker_data_bottom = self._gen_marker_data(2000)
+        
+    def gen_protect_data(self):
+        np.random.seed(10)
+        #row
+        protect_data = np.random.randint(0,2,size=(self.rgb_size*self.pixel_width_height[0]*self.bit_group_size, ))
+        protect_data = self.encode_data(protect_data, self.pixel_width_height[0])
+        protect_data_seq_top = protect_data.astype(np.uint8)
+        # col
+        num_col = self.pixel_width_height[1]+1
+        protect_data = np.random.randint(0,2,size=(self.rgb_size*num_col*self.bit_group_size, ))
+        protect_data = self.encode_data(protect_data, num_col)
+        protect_data_seq_left = protect_data.reshape(self.rgb_size, -1, self.pixel_block_size)  # 3 * H * 4
+        return [protect_data_seq_top, protect_data_seq_left]
+        
 
     def get_data(self):
         np.random.seed(10000)
@@ -175,7 +203,7 @@ class ImgUtils:
         #pprint(data)
         #print(data.shape)
         return data
-        
+
     def gen_calibration_data(self):
         # self.factor = 16, one Red is 256/16 = 16 points
         # we make 7 rows of pixels, [16 reds, 16 greens, 16 blues, R+G, R+B, G+B, R+G+B]
@@ -210,23 +238,67 @@ class ImgUtils:
         img = self.data_to_img(protect_data)
         img.save(img_file)
         #print('file %s saved!' % img_file)
-        
+
+    def gen_rgb_block(self, blk_type, width, hight):
+        assert width > 0 and hight > 0, 'invalid value'
+        value = 255
+        one_data = np.ones((hight, width)).astype(np.uint8) * value
+        zero_data = np.zeros((hight, width)).astype(np.uint8)
+        if blk_type == 'R':
+            data = np.concatenate((one_data, zero_data, zero_data), axis = 0)
+        elif blk_type == 'B':
+            data = np.concatenate((zero_data, one_data, zero_data), axis = 0)
+        elif blk_type == 'G':
+            data = np.concatenate((zero_data, zero_data, one_data), axis = 0)
+        else:
+            raise 'invalid blk type'
+        data = data.reshape(-1, hight, width)
+        return data
+
+    def add_data_ctrl_info(self, data, width, data_idx = 0):
+        pixels_for_block = 16
+        pixels_for_space = 8
+        bin_num_for_data_idx = 16
+        # 16x16, R - 1, G - 0
+        # 16x8, B - space, break
+        one_block = self.gen_rgb_block('R', pixels_for_block, pixels_for_block)
+        zero_block = self.gen_rgb_block('G', pixels_for_block, pixels_for_block)
+        space_block = self.gen_rgb_block('B', pixels_for_space, pixels_for_block)
+        width_for_all_blocks = (pixels_for_block + pixels_for_space) * bin_num_for_data_idx
+        assert data_idx >= 0 and data_idx < 65536, 'invalid data_idx.'
+        assert width > width_for_all_blocks , 'width not enough for 16 bit data index.'
+        end_block = self.gen_rgb_block('B', width - width_for_all_blocks, pixels_for_block)
+
+        remainder_list = []
+        for i in range(bin_num_for_data_idx):
+            remainder = data_idx % 2
+            data_idx = int(data_idx/2)
+            remainder_list.append(remainder)
+        remainder_list.reverse()
+
+        for i in range(bin_num_for_data_idx):
+            if i == 0:
+                ctrl_data = space_block
+            else:
+                ctrl_data = np.concatenate((ctrl_data, space_block), axis = 2)
+            if remainder_list[i] == 1:
+                block = one_block
+            else:
+                block = zero_block
+            ctrl_data = np.concatenate((ctrl_data, block), axis = 2)
+        ctrl_data = np.concatenate((ctrl_data, end_block), axis = 2)
+        #pprint(ctrl_data)
+        #print(ctrl_data.shape, data.shape, width)
+        data = np.concatenate((ctrl_data, data), axis=1)
+        return data
+
     @time_evaluate
-    def add_marker_data(self, data):
+    def add_marker_data(self, data, data_idx = 0):
         #return data
         # data: (3*H*W)
-        red_marker = self.marker_data_seq
-        #print('red_marker:', red_marker.shape)
-        #red_marker = np.ones(self.pixel_width_height[0] * self.pixel_block_size) * 255
-        other_marker = np.zeros(self.pixel_width_height[0] * self.pixel_block_size * 2)
-        #print('other_marker:', other_marker.shape)
-        rgb_marker = np.concatenate((red_marker, other_marker))
-        #print('rgb_marker:', rgb_marker.shape)
-        rgb_marker = rgb_marker.reshape(self.rgb_size, 1, -1)
-        rgb_marker = rgb_marker.astype(np.uint8)
+        data = np.concatenate((self.marker_data_top, data, self.marker_data_bottom), axis=1)
         #pprint(data)
-        #pprint(rgb_marker[0, 0, :])
-        data = np.concatenate((rgb_marker, data), axis=1)
+        data = self.add_data_ctrl_info(data, self.pixel_width_height[0] * self.pixel_block_size, data_idx)
         #pprint(data)
         return data
 
@@ -234,18 +306,15 @@ class ImgUtils:
     def add_protect_data(self, data):
         #return data
         # data: (3*H*W)
-        np.random.seed(10)
-        #row
-        protect_data = np.random.randint(0,2,size=(self.rgb_size*self.pixel_width_height[0]*self.bit_group_size, ))
-        protect_data = self.encode_data(protect_data, self.pixel_width_height[0])
-        protect_data = protect_data.astype(np.uint8)
-        data = np.concatenate((protect_data, data), axis=1)
+        # row
+        data = np.concatenate((self.protect_data_seq_top, data), axis=1)
         # col
-        num_col = self.pixel_width_height[1]+1
-        protect_data = np.random.randint(0,2,size=(self.rgb_size*num_col*self.bit_group_size, ))
-        protect_data = self.encode_data(protect_data, num_col)
-        protect_data = protect_data.reshape(self.rgb_size, -1, self.pixel_block_size)  # 3 * H * 4
-        blank_data = np.tile(np.array([0, 0, 0]), self.pixel_block_size).reshape(self.rgb_size, -1, self.pixel_block_size)   # 3 * 1 * 4
+        protect_data = self.protect_data_seq_left  # 3 * H * 4
+        #blank_data = np.tile(np.array([0, 0, 0]), self.pixel_block_size).reshape(self.rgb_size, -1, self.pixel_block_size)   # 3 * 1 * 4
+        data_height = data.shape[1]
+        blank_data_height = data_height - protect_data.shape[1]
+        blank_data_width = protect_data.shape[2]
+        blank_data = np.zeros((self.rgb_size, blank_data_height, blank_data_width))   # 3 * 1 * 4
         #print(blank_data.shape, protect_data.shape)
         protect_data = np.concatenate((blank_data, protect_data), axis=1)
         #print(protect_data.shape, data.shape)
@@ -256,11 +325,11 @@ class ImgUtils:
         return data
 
     @time_evaluate
-    def set_data_to_img(self, text, img_file):
+    def set_data_to_img(self, text, img_file, data_idx = 0):
         binary_data = self.string_to_binary(text)
         raw_data = self.gen_data(binary_data)
         enc_data = self.encode_data(raw_data)
-        marker_data = self.add_marker_data(enc_data)
+        marker_data = self.add_marker_data(enc_data, data_idx)
         protect_data = self.add_protect_data(marker_data)
         img = self.data_to_img(protect_data)
         img.save(img_file)
@@ -280,7 +349,7 @@ class ImgUtils:
         data = data.reshape(self.rgb_size, -1, self.pixel_block_size, self.pixel_width_height[0], self.pixel_block_size)
         data = data.swapaxes(2,3)  # (0,1,2,3,4) -> (0,1,3,2,4)
         data = data.reshape(self.rgb_size, -1, self.repeat_size)  # 3*(H*W)*16
-        
+
         if ImgUtils.ONLY_CENTER_PIXELS_FOR_DECODE:
             if self.pixel_block_size == 4:
                 data = data[:, :, [5,6,9,10]]  # only get the center 4 pixels, for 4x4
@@ -308,7 +377,7 @@ class ImgUtils:
         return data_bit
 
     @time_evaluate
-    def data_parser(self, data_bit):
+    def data_parser(self, data_bit, only_header_decode = False):
         # encode(length( 32 bit) + data_payload + md5 (128 bit) + padding) + padding
         assert len(data_bit) == self.raw_data_size, 'data_bit len %d != raw_data_size %d' % (len(data_bit), self.raw_data_size)
         if self.enable_permute: data_bit = self.unpermute(data_bit)
@@ -325,21 +394,33 @@ class ImgUtils:
             data_payload = None
         else:
             rs_block_num = int(np.ceil((data_size + self.length_size + self.md5_size) / (self.rs_payload_size * 8)))
-            data_size_before_encode = rs_block_num * self.rs_payload_size * 8
-            data_size_after_encode = rs_block_num * self.rs_block_size * 8
+            data_size_before_encode = rs_block_num * self.rs_payload_size * 8  # bits
+            data_size_after_encode = rs_block_num * self.rs_block_size * 8  # bits
+            fake_flag = False
             if rs_block_num > 1:
-                next_block_decode_data = self.coder.decode(data_bit[first_block_data_size_after_encode:data_size_after_encode])
+                #print('rs block num %d' % rs_block_num)
+                if only_header_decode:  # if do not decode payload, just fake it
+                    #print('only decode header, fake data.')
+                    fake_flag = True
+                    fake_size = data_size_before_encode - len(block_decode_data)
+                    next_block_decode_data = np.zeros(fake_size).astype(np.int32)
+                else:
+                    next_block_decode_data = self.coder.decode(data_bit[first_block_data_size_after_encode:data_size_after_encode]) # bit
                 block_decode_data = np.concatenate((block_decode_data, next_block_decode_data)).astype(np.int32)
             assert len(block_decode_data) == data_size_before_encode, 'block_decode_data len %d != data_size_before_encode %d' % (len(block_decode_data), data_size_before_encode)
             block_decode_data = block_decode_data[:data_size + self.length_size + self.md5_size]
-            rx_data_payload = block_decode_data[:-self.md5_size]
-            rx_md5_data = block_decode_data[-self.md5_size:]
-            md5_data = self.md5(rx_data_payload)
-            #print('rx_md5_data:', rx_md5_data)
-            #print('md5_data:', md5_data)
-            #print('rx data payload: ', data_bit[:50])
-            check_pass = np.sum(np.abs(md5_data - rx_md5_data)) == 0
-            #check_pass = True
+            rx_data_payload = block_decode_data[:-self.md5_size]  # bit
+            rx_md5_data = block_decode_data[-self.md5_size:]   # bit
+            
+            if fake_flag:
+                check_pass = True
+            else:
+                md5_data = self.md5(rx_data_payload)
+                #print('rx_md5_data:', rx_md5_data)
+                #print('md5_data:', md5_data)
+                #print('rx data payload: ', data_bit[:50])
+                check_pass = np.sum(np.abs(md5_data - rx_md5_data)) == 0
+                #check_pass = True
             if check_pass:
                 data_payload = rx_data_payload[self.length_size:]
             else:
@@ -352,11 +433,13 @@ class ImgUtils:
         # 3 * H * W
         _, H, W = data.shape
         data = data.astype(np.int32)
-        marker_seq = self.marker_data_seq.astype(np.int32) - 128
+        marker_seq = self.marker_seq_top
         if marker_seq.size > 500: marker_seq = marker_seq[:500]  # long marker leads to long time to find marker
-        #print(marker_seq.shape)
-        data_seq = data[0,:,:].reshape(-1) - 128
+        #print(self.marker_seq_top.shape, marker_seq.shape)
+        data_seq = data[0,:-1,:].reshape(-1) - 128
+        # find the marker index by the history result to speed up the search process
         if self.marker_index_found is None:
+            #print(data_seq.shape, marker_seq.shape)
             conv = np.convolve(data_seq, np.flipud(marker_seq), 'valid') / marker_seq.size
             conv = conv.astype(np.int32)
             index = np.argmax(conv)
@@ -373,17 +456,33 @@ class ImgUtils:
             index = np.argmax(conv)
             max_conv_value = conv[index]
             index = index + self.marker_index_found - search_range
-        row_index, col_index = divmod(index, W)
-        #print('row index %d, col index %d, max value %d' % (row_index, col_index, max_conv_value))
         if max_conv_value < 5000: #10000:
+            print('do not find top marker.')
             #self.marker_index_found = None
             return None
         else:
-            if not self.marker_index_found is None: 
+            row_index, col_index = divmod(index, W)
+            data_block_H = self.pixel_width_height[1]*self.pixel_block_size
+            data_block_W = self.pixel_width_height[0]*self.pixel_block_size
+            print('row index %d, col index %d, max value %d' % (row_index, col_index, max_conv_value))
+            bottom_marker_seq = self.marker_seq_bottom
+            #pprint(bottom_marker_seq[:50])
+            #top_marker_data = data[0, row_index, col_index:col_index+self.pixel_width_height[0]*self.pixel_block_size].reshape(-1)
+            #pprint(top_marker_data[:50])
+            bottom_marker_data = data[0,row_index+1+data_block_H, col_index:col_index+data_block_W].reshape(-1) - 128
+            #pprint(bottom_marker_data[:50])
+            #print(bottom_marker_data.shape, bottom_marker_seq.shape)
+            assert bottom_marker_data.size == bottom_marker_seq.size, 'invalid marker seq size.' 
+            
+            conv_value = sum(bottom_marker_data * bottom_marker_seq) / bottom_marker_seq.size
+            if conv_value < 5000:
+                print('the bottom marker do not match!')
+                return None
+            if not self.marker_index_found is None:
                 #print('previous index is %d, current index is %d.' % (self.marker_index_found, index))
                 pass
             self.marker_index_found = index
-            data = data[:, row_index:row_index+self.pixel_width_height[1]*self.pixel_block_size+1, col_index:col_index+self.pixel_width_height[0]*self.pixel_block_size]
+            data = data[:, row_index+1:row_index+1+data_block_H, col_index:col_index+data_block_W]  # do not include top and bottom marker
             #img = self.data_to_img(data)
             #img.show()
             # 3 * H * W, remove marker
@@ -393,34 +492,31 @@ class ImgUtils:
             return data
 
     @time_evaluate
-    def remove_marker_data(self, data):
-        data = data[:, 1:, :]
-        return data
-
-    @time_evaluate
     def get_pixel_data_from_screen(self, from_img_file = ''):
         rx_raw_data = self.get_screen(from_img_file)
-        rx_marker_data = self.get_data_by_marker(rx_raw_data)
-        #print('rx_marker_data:', rx_marker_data.shape)
-        if rx_marker_data is None: return None
-        rx_data = self.remove_marker_data(rx_marker_data)
+        rx_data = self.get_data_by_marker(rx_raw_data)
+        if rx_data is None: return None
         #print('rx_data:', rx_data.shape)
         return rx_data
 
     @time_evaluate
-    def get_data_from_screen(self, from_img_file = ''):
+    def get_data_from_screen(self, from_img_file = '', to_file = False):
         rx_data = self.get_pixel_data_from_screen(from_img_file)
         if rx_data is None: return ''
-        
+
         dec_data = self.decode_data(rx_data)
         #print('dec_data:', dec_data.shape)
-        dec_data_payload = self.data_parser(dec_data)
+        only_header_decode = to_file  # if img to file, only decode header
+        dec_data_payload = self.data_parser(dec_data, only_header_decode = only_header_decode)
         if dec_data_payload is None: return ''
         #print('dec_data_payload:', dec_data_payload.shape)
         text = self.binary_to_string(dec_data_payload)
         #print('img to text', text)
         return text
-        
+
+    def save_img_to_file(self, rx_img_file):
+        self.screen_img.save(rx_img_file)
+        #print('screen img saved: ', rx_img_file)
 
     def get_max_text_size(self):
         gap = 50
@@ -457,6 +553,12 @@ class ImgUtils:
         #img.show()
         return img
 
+    def _screen_to_file(self, img = None, data_idx = None):
+        # img_to_file take 2 steps
+        # (1) save img to a file
+        # (2) if 
+        rx_img_file = r'data\rx_data_%d.png' % data_idx
+        
     @time_evaluate
     def get_screen(self, from_img_file = ''):
         if from_img_file:
@@ -470,6 +572,7 @@ class ImgUtils:
                 img.save(filename)
                 print('img saved: ', filename)
                 #img = Image.open('data/screen_20220501_180007.png')
+        self.screen_img = img
         data = self.img_to_data(img)
         #print(data.shape)
         #pprint(data[0,0,:])
@@ -505,9 +608,8 @@ if __name__ == '__main__':
         marker_data = img_utils.add_marker_data(enc_data)
 
         rx_raw_data = img_utils.get_screen()
-        rx_marker_data = img_utils.get_data_by_marker(rx_raw_data)
-        if not rx_marker_data is None:
-            rx_data = img_utils.remove_marker_data(rx_marker_data)
+        rx_data = img_utils.get_data_by_marker(rx_raw_data)
+        if not rx_data is None:
             dec_data = img_utils.decode_data(rx_data)
             dec_data_payload = img_utils.data_parser(dec_data)
 

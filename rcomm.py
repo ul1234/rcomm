@@ -5,7 +5,7 @@ from datetime import datetime
 import os, sys, time
 import zipfile, base64
 from filetool import FileTool
-from decorator import thread_func
+from decorator import thread_func, time_evaluate
 
 class MyException(Exception): pass
 
@@ -77,6 +77,7 @@ class RComm:
         if not os.path.isdir(self.trans_path): os.makedirs(self.trans_path)
         self.filetool = FileTool()
         self.send_cmd_num = 0
+        self.rcv_cmd_num = 0
         self.log_to_file = log_to_file
 
     def init_tx_rx(self):
@@ -91,11 +92,18 @@ class RComm:
         self.tx_comm_tool.close()
         self.rx_comm_tool.close()
 
+    @time_evaluate
     def _receive_wait(self, timeout = 0):
+        def _fake_payload(text):
+            add_post_fix = self.delimiter + self.rx_postfix
+            post_fix_len = len(add_post_fix)
+            text = text[:-post_fix_len] + add_post_fix
+            return text
+
         total_times = timeout*2 if timeout else 1000000
         for times in range(total_times):
             time.sleep(0.5)
-            text = self.rx_text()
+            text = self.rx_text(expect_data_idx = self.rcv_cmd_num, fake_func = _fake_payload)
             #print('receive text: %s' % text)
             cmd, payload = self._unpack(text)
             if cmd:
@@ -155,7 +163,7 @@ class RComm:
             #print(payload)
         text += self.tx_postfix
         self.clear_rx_text()
-        self.tx_text(text)
+        self.tx_text(text, data_idx = self.send_cmd_num)
         self.cmd_text_for_resend = (cmd, text)
         self.print_debug('send cmd: %s' % cmd)
         self.send_cmd_num = self.send_cmd_num + 1
@@ -171,10 +179,16 @@ class RComm:
     def _resend_cmd(self):
         self.tx_reset_text()
         time.sleep(0.3)
-        self.tx_text(self.cmd_text_for_resend[1])
+        self.tx_text(self.cmd_text_for_resend[1], data_idx = self.send_cmd_num)
         self.print_debug('resend cmd: %s' % self.cmd_text_for_resend[0])
 
     def _wait_for_cmd(self, state, wait_cmd, timeout = 0):
+        # wrapper for __wait_for_cmd
+        result = self.__wait_for_cmd(state, wait_cmd, timeout)
+        self.rcv_cmd_num += 1
+        return result
+        
+    def __wait_for_cmd(self, state, wait_cmd, timeout = 0):
         start_time = time.time()
         is_send_cmd = True if wait_cmd in self.receive_cmds_list else False
         while True:
