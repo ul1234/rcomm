@@ -472,6 +472,7 @@ class ImgUtils:
             bottom_marker_data = data[0,row_index+1+data_block_H, col_index:col_index+data_block_W].reshape(-1) - 128
             #pprint(bottom_marker_data[:50])
             #print(bottom_marker_data.shape, bottom_marker_seq.shape)
+            if bottom_marker_data.size != bottom_marker_seq.size: return None
             assert bottom_marker_data.size == bottom_marker_seq.size, 'invalid marker seq size.' 
             
             conv_value = sum(bottom_marker_data * bottom_marker_seq) / bottom_marker_seq.size

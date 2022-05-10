@@ -181,14 +181,8 @@ class RComm:
         time.sleep(0.3)
         self.tx_text(self.cmd_text_for_resend[1], data_idx = self.send_cmd_num)
         self.print_debug('resend cmd: %s' % self.cmd_text_for_resend[0])
-
-    def _wait_for_cmd(self, state, wait_cmd, timeout = 0):
-        # wrapper for __wait_for_cmd
-        result = self.__wait_for_cmd(state, wait_cmd, timeout)
-        self.rcv_cmd_num += 1
-        return result
         
-    def __wait_for_cmd(self, state, wait_cmd, timeout = 0):
+    def _wait_for_cmd(self, state, wait_cmd, timeout = 0):
         start_time = time.time()
         is_send_cmd = True if wait_cmd in self.receive_cmds_list else False
         while True:
@@ -324,12 +318,14 @@ class RComm:
                     rx_bytes = 0
                     f = open(rx_b64_file, 'wb')
                 state = RX_STATE
+                self.rcv_cmd_num += 1  # update received cmd number
             elif state == RX_STATE:
                 self.send_cmd('OK %d' % (rx_bytes))
                 start_bytes, tx_len, payload = self._wait_for_cmd(state, 'PACKET')
                 if start_bytes == rx_bytes:
                     f.write(payload.encode())
                     rx_bytes += tx_len
+                    self.rcv_cmd_num += 1  # update received cmd number
                 else:
                     self.print_debug('received start_bytes %d != rx bytes %d.' % (start_bytes, rx_bytes))
                 self.print_transfer(file_len, rx_bytes)
@@ -340,6 +336,7 @@ class RComm:
                 #    result = self._wait_for_cmd(state, 'PACKET', timeout = 10)
                 #    if not result: break  # timeout
                 self.send_cmd('FINISH %d' % (rx_bytes))
+                self.rcv_cmd_num += 1  # update received cmd number
                 break
         if f: f.close()
         #self.tx_empty_text()

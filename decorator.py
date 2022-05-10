@@ -56,5 +56,5 @@ def _time_evaluate(func):
         return result
     return _func
 
-#time_evaluate = lambda func: func
-time_evaluate = _time_evaluate
+time_evaluate = lambda func: func
+#time_evaluate = _time_evaluate

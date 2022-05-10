@@ -59,8 +59,8 @@ class RCommServer(RComm):
 
 if __name__ == '__main__':
     assert len(sys.argv) == 1, 'Usage: python rcomm_server.py'
-    #comm = RCommServer(client_to_server = 'img')
-    comm = RCommServer(client_to_server = 'img_to_file', log_to_file = False)
+    comm = RCommServer(client_to_server = 'img')
+    #comm = RCommServer(client_to_server = 'img_to_file', log_to_file = False)
     #comm = RCommServer(client_to_server = 'img_from_file')
     #comm = RCommServer()
     print('start receiving...')
